@@ -275,6 +275,7 @@
       const [garminAdjusted, setGarminAdjusted] = useState(null);
       const [garminFileName, setGarminFileName] = useState("");
       const [weightUnit,     setWeightUnit]     = useState("kg");
+      const [showResetWarning, setShowResetWarning] = useState(false);
       
 
       useEffect(() => {
@@ -475,10 +476,15 @@ Provide your response in this EXACT JSON format (no markdown, no extra text):
       }
 
       function reset() {
+        setShowResetWarning(true);
+      }
+
+      function performReset() {
         localStorage.removeItem(STORAGE_KEY);
         setPhase("onboard"); setQIndex(0); setProfile({}); setInputVal(""); setPlan(null);
         setWorkoutLogs([]); setAiResponse(""); setGarminData(null); setGarminInsights("");
         setGarminAdjusted(null); setGarminFileName("");
+        setShowResetWarning(false);
       }
 
       function switchWeightUnit(unit) {
@@ -529,6 +535,8 @@ Provide your response in this EXACT JSON format (no markdown, no extra text):
         insightCard: (col) => ({ background: col+"11", border: `1px solid ${col}33`, borderRadius: 12, padding: 14, marginBottom: 8 }),
         adjCard:   (col) => ({ background: col+"11", border: `1px solid ${col}33`, borderRadius: 10, padding: 12, marginBottom: 8 }),
         warnCard:  { background: "#EF444422", border: "1px solid #EF444444", borderRadius: 10, padding: 12, marginBottom: 8 },
+        warningOverlay: { position: "fixed", inset: 0, background: "#000A", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 },
+        warningCard: { width: "100%", maxWidth: 420, background: C.card, border: `1px solid #EF444455`, borderRadius: 14, padding: 18 },
       };
 
       const stats = plan ? calcStats(profile) : null;
@@ -642,6 +650,21 @@ Provide your response in this EXACT JSON format (no markdown, no extra text):
       return (
         <div style={s.app}>
           {toast && <div style={s.toast}>{toast}</div>}
+          {showResetWarning && (
+            <div style={s.warningOverlay}>
+              <div style={s.warningCard}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 2, color: "#EF4444", textTransform: "uppercase", marginBottom: 10 }}>Reset Warning</div>
+                <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Delete all app data?</div>
+                <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.6, marginBottom: 14 }}>
+                  This will remove your profile, workout history, Garmin insights, and saved plan from this device.
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={() => setShowResetWarning(false)} style={{ ...s.btnSm(C.muted, true), flex: 1, minWidth: 140 }}>Cancel</button>
+                  <button onClick={performReset} style={{ ...s.btnSm("#EF4444"), flex: 1, minWidth: 140 }}>Yes, Reset Everything</button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Slim top bar — logo + reset only */}
           <div style={s.topBar}>
