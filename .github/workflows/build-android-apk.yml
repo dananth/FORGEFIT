@@ -22,36 +22,30 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Debug â€” show structure
+      - name: Install Gradle 8.10
         run: |
-          echo "=== android-app root ==="
-          ls -la android-app/
-          echo ""
-          echo "=== android-app/app ==="
-          ls -la android-app/app/ 2>/dev/null || echo "No app/ folder"
-          echo ""
-          echo "=== android-app/app/src ==="
-          ls -la android-app/app/src/ 2>/dev/null || echo "No src/ folder"
-          echo ""
-          echo "=== gradlew ==="
-          ls -la android-app/gradlew 2>/dev/null || echo "gradlew NOT found"
-          echo ""
-          echo "=== gradle/wrapper ==="
-          ls -la android-app/gradle/wrapper/ 2>/dev/null || echo "No gradle wrapper folder"
+          wget -q https://services.gradle.org/distributions/gradle-8.10-bin.zip
+          unzip -q gradle-8.10-bin.zip -d /opt/gradle
+          echo "/opt/gradle/gradle-8.10/bin" >> $GITHUB_PATH
 
       - name: Copy index.html to assets
         run: |
           mkdir -p android-app/app/src/main/assets/www
           cp index.html android-app/app/src/main/assets/www/index.html
-          echo "âœ… Copied index.html"
+          echo "âœ… Copied index.html to assets"
 
-      - name: Grant execute permission for gradlew
-        working-directory: android-app
-        run: chmod +x gradlew
+      - name: Debug â€” show structure
+        run: |
+          echo "=== android-app/ ==="
+          ls -la android-app/
+          echo "=== android-app/app/ ==="
+          ls -la android-app/app/ 2>/dev/null || echo "No app/ folder"
+          echo "=== Gradle version ==="
+          gradle --version
 
       - name: Build debug APK
         working-directory: android-app
-        run: ./gradlew assembleDebug --stacktrace --info 2>&1 | tail -100
+        run: gradle assembleDebug --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
