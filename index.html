@@ -251,6 +251,92 @@
       return summary;
     }
 
+    async function fetchWithTimeout(url, options, timeoutMs = 7000) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, { ...options, signal: controller.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    function buildOfflineCoachReply(profile, stats, question, garminInsights) {
+      const goal = profile.goal || "Body Recomposition";
+      const days = parseInt(profile.days || "3", 10);
+      const session = profile.sessionLen || "45 min";
+      const targetCalories = stats?.target || "your maintenance";
+      const hasRecoverySignal = Boolean(garminInsights && garminInsights.trim());
+      const lowerQ = (question || "").toLowerCase();
+
+      if (lowerQ.includes("eat") || lowerQ.includes("nutrition") || lowerQ.includes("calorie")) {
+        return `For ${goal}, target around ${targetCalories} kcal/day, split into 3-4 meals with 25-40g protein each. Keep protein high at roughly 1.6-2.2 g/kg bodyweight and place most carbs around training sessions. Use one simple rule this week: hit calories and protein first, then fill the rest with whole-food carbs and healthy fats. Re-check scale trend every 7-10 days and adjust by about 150 kcal if progress stalls.`;
+      }
+
+      if (lowerQ.includes("plateau") || lowerQ.includes("stuck") || lowerQ.includes("break")) {
+        return `To break a plateau, keep your ${days}-day split but add one clear progression target per main lift each week (extra rep or +2.5 kg). Keep sessions tight at ${session}, cap hard sets to avoid junk volume, and schedule one lighter deload week every 4-6 weeks. If recovery is poor, reduce total sets by about 20% for 1 week, then rebuild. Measure progress with weekly averages, not single-day fluctuations.`;
+      }
+
+      if (lowerQ.includes("overload") || lowerQ.includes("progress")) {
+        return `Use double progression: stay within your rep range, and when you hit the top on all sets, increase load by the smallest step next session. Keep 1-2 reps in reserve on most sets, pushing harder only on final sets of key lifts. Log reps, load, and rest so each week you can beat one metric. If performance drops for more than two sessions, hold load steady and improve recovery first.`;
+      }
+
+      if (lowerQ.includes("supplement")) {
+        return `Keep supplements simple: creatine monohydrate 3-5g daily, whey/casein only to hit protein targets, and caffeine pre-workout if tolerated. If you train indoors, consider vitamin D after checking with your clinician. For performance, supplements are secondary to sleep, calories, and progression tracking. Add only one new supplement at a time so you can assess impact clearly.`;
+      }
+
+      return `Based on your ${goal} goal, train ${days} days/week with a clear progression target each session and keep nutrition near ${targetCalories} kcal/day. Prioritize protein intake, consistent sleep, and progressive overload before adding complexity. ${hasRecoverySignal ? "Your Garmin recovery signal is available, so bias intensity on good-recovery days and keep lower-intensity work when recovery is poor. " : "When recovery feels low, reduce volume by 15-20% for the day instead of skipping entirely. "}Track results weekly and adjust one variable at a time for steady progress.`;
+    }
+
+    function buildOfflineGarminAnalysis(profile, stats, summary) {
+      const avgStress = summary.avgStress || 0;
+      const avgSleep = parseFloat(summary.avgSleep || 0);
+      const avgHRV = summary.avgHRV || 0;
+      const avgHR = summary.avgHR || 0;
+      const vo2 = parseFloat(summary.vo2Max || 0);
+      const totalCal = summary.totalCal || 0;
+
+      const poorRecovery = (avgSleep > 0 && avgSleep < 60) || (avgHRV > 0 && avgHRV < 35) || avgStress > 60;
+      const moderateRecovery = (avgSleep >= 60 && avgSleep < 75) || (avgHRV >= 35 && avgHRV < 50) || (avgStress >= 40 && avgStress <= 60);
+
+      const recoveryText = poorRecovery
+        ? "Recovery markers are below target, so pull back intensity short term and prioritize sleep quality."
+        : moderateRecovery
+        ? "Recovery is moderate; keep hard days but cap failure work and watch fatigue closely."
+        : "Recovery looks solid; you can keep progression on your primary lifts this week.";
+
+      const cardioText = avgHR > 0
+        ? `Use 2 cardio sessions in Zone 2 (roughly 60-70% max HR) and keep one optional harder interval block only if recovery stays stable.`
+        : "Use 2 moderate cardio sessions weekly and keep effort conversational on recovery days.";
+
+      const nutritionText = totalCal > 0
+        ? `Based on your activity burn, keep intake around ${stats?.target || "target calories"} kcal and adjust by ~100-150 kcal after 10 days if trend stalls.`
+        : `Keep intake near ${stats?.target || "target calories"} kcal and prioritize protein plus hydration consistency.`;
+
+      const warningFlags = [];
+      if (avgSleep > 0 && avgSleep < 55) warningFlags.push("Sleep score is consistently low; performance and recovery may suffer.");
+      if (avgHRV > 0 && avgHRV < 30) warningFlags.push("HRV is low relative to training load; reduce high-intensity volume this week.");
+      if (avgStress > 65) warningFlags.push("Stress is elevated; schedule at least one low-intensity recovery day.");
+
+      return {
+        summary: `${profile.name || "Athlete"}, your Garmin trends show ${poorRecovery ? "recovery strain" : "work capacity you can build on"}. ${recoveryText} Keep training aligned with your ${profile.goal || "body recomposition"} goal and adjust load based on daily readiness signals.`,
+        keyInsights: [
+          { icon: "❤️", title: "Heart Rate Zone", detail: avgHR > 0 ? `Average HR is ${avgHR} bpm, so aerobic base work should stay controlled outside hard days.` : "Heart-rate trend is limited; use RPE to keep most conditioning moderate." },
+          { icon: "😴", title: "Recovery Status", detail: recoveryText },
+          { icon: "⚡", title: "Fitness Level", detail: vo2 > 0 ? `VO2 Max around ${vo2.toFixed(1)} suggests current aerobic fitness is ${vo2 >= 45 ? "strong" : vo2 >= 35 ? "developing" : "foundational"}.` : "VO2 Max data is unavailable, so progress should be judged by session quality and weekly performance." },
+          { icon: "🔋", title: "Energy & Load", detail: totalCal > 0 ? `Total logged burn is about ${totalCal} kcal; fuel training days to protect performance and recovery.` : "Calorie burn totals are limited; keep energy intake steady and monitor bodyweight trend weekly." },
+        ],
+        planAdjustments: [
+          { type: "intensity", recommendation: poorRecovery ? "Reduce heavy working sets by about 20% for 5-7 days, then rebuild gradually." : "Keep 1-2 hard sessions for each major lift and progress load conservatively week to week." },
+          { type: "recovery", recommendation: "Set a fixed wind-down routine and target 7-9 hours sleep; include at least one low-intensity day weekly." },
+          { type: "cardio", recommendation: cardioText },
+          { type: "nutrition", recommendation: nutritionText },
+        ],
+        warningFlags,
+        weeklyStructure: poorRecovery ? "Use 2 hard days, 2 moderate days, and at least 2 recovery-focused sessions this week." : "Use your current split, but keep one lighter day between high-intensity lower-body sessions.",
+      };
+    }
+
     function FitnessCoach() {
       const KG_TO_LB = 2.20462;
 
@@ -276,6 +362,11 @@
       const [garminFileName, setGarminFileName] = useState("");
       const [weightUnit,     setWeightUnit]     = useState("kg");
       const [showResetWarning, setShowResetWarning] = useState(false);
+      const [chatMessages, setChatMessages] = useState([
+        { role: "assistant", text: "Ask me anything about training, nutrition, recovery, or supplements." }
+      ]);
+      const [chatInput, setChatInput] = useState("");
+      const [chatBusy, setChatBusy] = useState(false);
       
 
       useEffect(() => {
@@ -342,8 +433,7 @@
         }
       }
 
-      async function askAI(question) {
-        setLoadingAI(true); setAiResponse("");
+      async function getCoachAnswer(question) {
         const stats = calcStats(profile);
         const systemPrompt = `You are an elite personal trainer and nutritionist. User profile:
 Name: ${profile.name}, Age: ${profile.age}, Gender: ${profile.gender}
@@ -354,11 +444,34 @@ TDEE: ~${stats?.tdee} kcal, Target calories: ~${stats?.target} kcal
 ${garminInsights ? `\nGarmin data insights already analysed:\n${garminInsights}` : ""}
 Give concise, actionable advice in 3-5 sentences with specific numbers.`;
         try {
-          const res  = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, system: systemPrompt, messages: [{ role: "user", content: question }] }) });
+          const res  = await fetchWithTimeout("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, system: systemPrompt, messages: [{ role: "user", content: question }] }) });
+          if (!res.ok) throw new Error(`Live AI unavailable (${res.status})`);
           const data = await res.json();
-          setAiResponse(data.content?.map(b => b.text || "").join("") || "Sorry, no response.");
-        } catch { setAiResponse("Network error. Please try again."); }
+          const content = data.content?.map(b => b.text || "").join("").trim();
+          if (!content) throw new Error("Empty AI response");
+          return content;
+        } catch {
+          const fallback = buildOfflineCoachReply(profile, stats, question, garminInsights);
+          return `${fallback}\n\n(Offline coach mode: live AI is currently unavailable.)`;
+        }
+      }
+
+      async function askAI(question) {
+        setLoadingAI(true); setAiResponse("");
+        const reply = await getCoachAnswer(question);
+        setAiResponse(reply);
         setLoadingAI(false);
+      }
+
+      async function sendChatMessage() {
+        const prompt = chatInput.trim();
+        if (!prompt || chatBusy) return;
+        setChatMessages(prev => [...prev, { role: "user", text: prompt }]);
+        setChatInput("");
+        setChatBusy(true);
+        const reply = await getCoachAnswer(prompt);
+        setChatMessages(prev => [...prev, { role: "assistant", text: reply }]);
+        setChatBusy(false);
       }
 
       async function analyseGarmin(summary) {
@@ -409,7 +522,8 @@ Provide your response in this EXACT JSON format (no markdown, no extra text):
 }`;
 
         try {
-          const res  = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, messages: [{ role: "user", content: prompt }] }) });
+          const res  = await fetchWithTimeout("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1000, messages: [{ role: "user", content: prompt }] }) });
+          if (!res.ok) throw new Error(`Live AI unavailable (${res.status})`);
           const data = await res.json();
           const raw  = data.content?.map(b => b.text || "").join("") || "{}";
           try {
@@ -422,7 +536,12 @@ Provide your response in this EXACT JSON format (no markdown, no extra text):
             setGarminInsights(raw);
             persist(profile, plan, workoutLogs, summary, raw, null, garminFileName);
           }
-        } catch { setGarminInsights("Network error. Please try again."); }
+        } catch {
+          const fallback = buildOfflineGarminAnalysis(profile, stats, summary);
+          setGarminInsights(fallback.summary);
+          setGarminAdjusted(fallback);
+          persist(profile, plan, workoutLogs, summary, fallback.summary, fallback, garminFileName);
+        }
         setGarminLoading(false);
       }
 
@@ -537,6 +656,10 @@ Provide your response in this EXACT JSON format (no markdown, no extra text):
         warnCard:  { background: "#EF444422", border: "1px solid #EF444444", borderRadius: 10, padding: 12, marginBottom: 8 },
         warningOverlay: { position: "fixed", inset: 0, background: "#000A", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 },
         warningCard: { width: "100%", maxWidth: 420, background: C.card, border: `1px solid #EF444455`, borderRadius: 14, padding: 18 },
+        chatPanel: { background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 12, marginBottom: 12 },
+        chatMessages: { maxHeight: 420, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, padding: 4 },
+        chatBubble: (isUser) => ({ alignSelf: isUser ? "flex-end" : "flex-start", maxWidth: "85%", background: isUser ? C.accent : C.surface, color: "#fff", border: `1px solid ${isUser ? C.accent : C.border}`, borderRadius: 12, padding: "10px 12px", fontSize: 13, lineHeight: 1.45, whiteSpace: "pre-wrap" }),
+        chatComposer: { display: "flex", gap: 8, marginTop: 10 },
       };
 
       const stats = plan ? calcStats(profile) : null;
@@ -695,6 +818,11 @@ Provide your response in this EXACT JSON format (no markdown, no extra text):
               <span style={s.tabLabel(tab === "history", C.green)}>History{workoutLogs.length > 0 ? ` (${workoutLogs.length})` : ""}</span>
               {tab === "history" && <div style={s.tabDot(C.green)} />}
             </button>
+            <button style={s.tabBtn(tab === "chat", C.blue)} onClick={() => setTab("chat")}>
+              <span style={s.tabIcon}>💬</span>
+              <span style={s.tabLabel(tab === "chat", C.blue)}>AI Chat</span>
+              {tab === "chat" && <div style={s.tabDot(C.blue)} />}
+            </button>
           </div>
 
           {/* ══ PLAN TAB ══ */}
@@ -802,6 +930,7 @@ Provide your response in this EXACT JSON format (no markdown, no extra text):
               <div style={s.card}>
                 <div style={s.secTitle}>AI Coach</div>
                 <div style={s.h3}>Ask Your Coach</div>
+                <button onClick={() => setTab("chat")} style={{ ...s.btnSm(C.blue, true), marginBottom: 10 }}>Open AI Chat Tab →</button>
                 <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 10 }}>
                   {["What should I eat to hit my goal?","How do I break through a plateau?","How do I track progressive overload?","What supplements should I consider?"].map(q => (
                     <button key={q} onClick={() => askAI(q)} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "9px 12px", color: C.text, textAlign: "left", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>{q}</button>
@@ -814,6 +943,46 @@ Provide your response in this EXACT JSON format (no markdown, no extra text):
                     <div style={{ fontSize: 13, lineHeight: 1.6, color: C.text }}>{aiResponse}</div>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* ══ AI CHAT TAB ══ */}
+          {tab === "chat" && (
+            <div style={s.page}>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ ...s.secTitle, color: C.blue }}>AI Coach Chat</div>
+                <div style={s.h1}>Chat with Your Coach</div>
+                <div style={s.muted}>Ask custom questions about training, food, recovery, and progress.</div>
+              </div>
+              <div style={s.chatPanel}>
+                <div style={s.chatMessages}>
+                  {chatMessages.map((m, i) => (
+                    <div key={i} style={s.chatBubble(m.role === "user")}>{m.text}</div>
+                  ))}
+                  {chatBusy && <div style={s.chatBubble(false)}>Thinking...</div>}
+                </div>
+                <div style={s.chatComposer}>
+                  <input
+                    style={s.input}
+                    placeholder="Ask your coach anything..."
+                    value={chatInput}
+                    onChange={e => setChatInput(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && sendChatMessage()}
+                  />
+                  <button onClick={sendChatMessage} style={{ ...s.btn(C.blue), width: "auto", marginTop: 0, padding: "0 16px" }} disabled={!chatInput.trim() || chatBusy}>Send</button>
+                </div>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {["Build me a 3-day beginner structure.","How much protein should I eat daily?","How can I improve recovery this week?","Give me a simple plateau protocol."].map((q) => (
+                  <button
+                    key={q}
+                    onClick={() => { setChatInput(q); }}
+                    style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "7px 10px", fontSize: 12, cursor: "pointer" }}
+                  >
+                    {q}
+                  </button>
+                ))}
               </div>
             </div>
           )}
