@@ -74,13 +74,25 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        val remoteUrl = BuildConfig.WEB_APP_URL.trim()
-        val localAssetUrl = "file:///android_asset/www/index.html"
+        webView.loadUrl(resolveStartUrl())
+    }
 
-        if (remoteUrl.isNotEmpty()) {
-            webView.loadUrl(remoteUrl)
-        } else {
-            webView.loadUrl(localAssetUrl)
+    private fun resolveStartUrl(): String {
+        val localAssetUrl = "file:///android_asset/www/index.html"
+        val remoteUrl = BuildConfig.WEB_APP_URL.trim()
+
+        if (remoteUrl.isEmpty()) {
+            return localAssetUrl
+        }
+
+        return try {
+            val parsed = Uri.parse(remoteUrl)
+            val isHttp = parsed.scheme.equals("http", ignoreCase = true) ||
+                parsed.scheme.equals("https", ignoreCase = true)
+            val hasHost = !parsed.host.isNullOrBlank()
+            if (isHttp && hasHost) remoteUrl else localAssetUrl
+        } catch (_: Exception) {
+            localAssetUrl
         }
     }
 
